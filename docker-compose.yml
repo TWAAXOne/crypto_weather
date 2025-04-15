@@ -1,0 +1,32 @@
+version: '3.9'
+
+services:
+  backend:
+    build:
+      context: ./backend
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./backend:/app
+    restart: always
+    shm_size: '1gb'  # Helps avoid Chrome crashing
+    networks:
+      - crypto_net
+
+  frontend:
+    build:
+      context: ../crypto_weather/frontend
+    ports:
+      - "8501:8501"
+    environment:
+      - STREAMLIT_SERVER_PORT=8501
+      - BACKEND_URL=http://backend:8080  # optional, if frontend needs to talk to backend
+    depends_on:
+      - backend
+    restart: always
+    networks:
+      - crypto_net
+
+networks:
+  crypto_net:
+    driver: bridge
