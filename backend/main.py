@@ -1,4 +1,5 @@
 from fastapi import FastAPI
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from typing import List
 import torch
@@ -8,7 +9,6 @@ import os
 import json
 
 from scraping.scrape import run_scraper
-
 
 # ==== Regression Model ====
 
@@ -67,19 +67,27 @@ def get_sentiment_status(avg_score: float) -> str:
     else:
         return "Extreme greed"
 
-# ==== API Endpoint ====
+# ==== Exposed Scraping Endpoint ====
 
-def engage_scraping():
-    articles = run_scraper(max_articles=5)  # or any number you want
-    return {"articles": articles}
+@app.get("/engage_scraping", response_class=JSONResponse)
+def engage_scraping_api():
+    try:
+        articles = run_scraper(max_articles=5)
+        return {"status": "success", "articles": articles}
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"status": "error", "detail": str(e)})
 
+# ==== Analysis Endpoint ====
 
 @app.post("/engage_analysis")
 async def engage_analysis():
-    data = engage_scraping()
-    articles = data["articles"]  # assuming the JSON has a top-level "articles" list
+    data = engage_scraping_api()
+    if data.get("status") != "success":
+        return JSONResponse(status_code=500, content={"error": data.get("detail", "Scraping failed")})
 
+    articles = data["articles"]
     texts = [f"{article['title']}. {article['content']}" for article in articles]
+
     encodings = tokenizer(texts, truncation=True, padding=True, return_tensors="pt", max_length=512)
     encodings = {k: v.to(device) for k, v in encodings.items()}
 
@@ -94,4 +102,3 @@ async def engage_analysis():
         "status": status,
         "individual_scores": [round(p, 4) for p in predictions]
     }
-

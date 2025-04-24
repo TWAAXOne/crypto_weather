@@ -31,7 +31,7 @@ if st.button("Launch Analysis"):
         st.error(f"Error calling backend: {e}")
         avg_score = 0.0  # fallback
 else:
-    avg_score = 0.21  # default before clicking
+    avg_score = 0.0  # default before clicking
 
 # === Sentiment Mapping ===
 def get_sentiment_status(score: float) -> str:
