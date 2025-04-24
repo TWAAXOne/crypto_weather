@@ -8,7 +8,7 @@ The objective of this project is to create an intelligent and interactive platfo
 ---
 
 ## • Context and Objectives  
-Cryptocurrency markets are highly reactive to public opinion and media influence. Sentiment analysis provides an effective way to quantify that influence. This project was developed in the context of the *Web Mining* module in the **Master of Science in Data Science**, with the following goals:
+Cryptocurrency markets are highly reactive to public opinion and media influence. Sentiment analysis provides an effective way to quantify that influence. This project was developed in the context of the *Web Mining* module , with the following goals:
 - Collect real-time news related to Bitcoin and crypto markets.
 - Analyze the tone and sentiment of these articles using a trained model.
 - Translate sentiment scores into an aggregated index for intuitive visualization.
@@ -90,24 +90,24 @@ The system is based on **regression**:
 - A numeric sentiment index updated on user request.
 - A readable label indicating current market mood.
 - A gauge visual (Plotly) showing where the market lies between “Fear” and “Greed”.
-- Optionally, a breakdown of sentiment per article.
 
 ---
 
 ## • Risks, Critical Points, or Problems Encountered  
 - **Website structure volatility**: Scraper depends on Cointelegraph's layout and may break if the site changes.
-- **Latency**: Analysis requires 10–15 seconds per request due to live scraping and model inference.
-- **Model limits**: BERT input is capped at 512 tokens, which may truncate long articles.
+- **Latency**: Analysis requires 1-2 min per request due to live scraping and model inference.
+- **Model limits**: BERT input is capped at 512 tokens, which  truncate long articles.
 - **Generalization**: Even with fine-tuning, unexpected article styles may reduce accuracy.
 
 ---
 
 ## • Planning of Next Project Steps  
-While the prototype is completed, possible next steps include:
-- Adding historical trend charts.
-- Supporting multilingual articles and international sources.
-- Optimizing performance with async scraping and inference.
-- Improving interface design for better user interaction.
-- Expanding model training with multilingual or multi-topic corpora.
+The following steps are planned for the successful execution of the project:
 
+-  Preparing and cleaning the training dataset.  
+-  Preparing the scraping script to gather live crypto news articles.  
+-  Fine-tuning the BERT regression model on sentiment-labeled crypto news.  
+-  Designing the Streamlit frontend interface.  
+-  Implementing the FastAPI backend for scraping and model inference.  
+-  Integrating all components within a Docker environment.  
 ---
