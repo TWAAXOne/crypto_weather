@@ -1,0 +1,5 @@
+pandas
+tables
+emoji
+h5py
+pyperclip
