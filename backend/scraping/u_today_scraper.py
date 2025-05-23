@@ -105,7 +105,7 @@ def scrape_u_today(driver, max_articles=-1):
                 print(f"\n=== Article #{scraped + 1} ===")
                 print(f"URL   : {link}")
                 print(f"Date  : {date}")
-                print(f"Extrait:\n{text[:300]}…\n")
+                print(f"Extrait:\n{text}…\n")
 
             except Exception as e:
                 print(f" Erreur sur {link} : {e}")

@@ -56,7 +56,7 @@ class CryptoScraper:
             print(f"\n=== Article #{self.scraped+1} ===")
             print("URL   :", link)
             print("Date  :", date)
-            print("Extrait:", body[:200].replace("\n"," "), "…")
+            print("Extrait:", body.replace("\n"," "), "…")
         except Exception as e:
             print(" Erreur sur", link, ":", e)
         finally:
