@@ -5,6 +5,17 @@ from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 
+import sys
+import os
+
+# Ajoute le dossier parent de "processor" au path
+script_dir = os.path.dirname(os.path.abspath(__file__))
+parent_dir = os.path.join(script_dir, '..')
+sys.path.append(os.path.abspath(parent_dir))
+
+from processor import h5_utilities, emoji_handler
+
+
 CRYPTO_KEYWORDS = [
     "Bitcoin","BTC","Ethereum","ETH","Tether","USDT","XRP",
     "Binance Coin","BNB","Solana","SOL","USD Coin","USDC",
@@ -12,7 +23,7 @@ CRYPTO_KEYWORDS = [
 ]
 
 class CryptoScraper:
-    def __init__(self, driver, config):
+    def __init__(self, driver, config, h5FileName = "dataset"):
         """
         config = {
           "base_url": str,
@@ -25,11 +36,15 @@ class CryptoScraper:
           # si next:
           "next_button_selector": str
         }
+
+        h5FileName : dataset file name without extension, default value = "dataset"
         """
         self.driver = driver
         self.cfg = config
         self.seen = set()
         self.scraped = 0
+        self.h5FileName = h5FileName
+        self.havePlaceholder = True #Check que dataset n'as plus le placeholder de création
 
     def _matches_keyword(self, text):
         t = text.lower()
@@ -53,10 +68,30 @@ class CryptoScraper:
             paras = self.driver.find_elements(By.CSS_SELECTOR,
                                               self.cfg["content_selector"])
             body = "\n".join(p.text for p in paras)
+
+            content = body.replace("\n"," ")
+            content = emoji_handler.remove_emojis(content)
+
             print(f"\n=== Article #{self.scraped+1} ===")
             print("URL   :", link)
             print("Date  :", date)
-            print("Extrait:", body.replace("\n"," "), "…")
+            print("Extrait:", content, "…")
+
+            #Put regex crypto here
+            list_crypto = ["btc","ether"]
+
+            h5_utilities.appendArticleToDataset(content,link,date,list_crypto,0.0,self.h5FileName)
+            if self.havePlaceholder:
+                if h5_utilities.getDatasetPlaceholderAttribute(self.h5FileName):
+                    print("Remove placeholder content")
+                    h5_utilities.remove_first_item(self.h5FileName)
+                    h5_utilities.setDatasetPlaceholderAttribute(False, self.h5FileName)
+                else:
+                    print("No Placeholder content to remove")
+                    pass
+
+                self.havePlaceholder = False
+
         except Exception as e:
             print(" Erreur sur", link, ":", e)
         finally:
@@ -151,6 +186,6 @@ if __name__ == "__main__":
         for cfg in sites:
             print("\n\n▶▶▶ Scraping", cfg["base_url"])
             scraper = CryptoScraper(driver, cfg)
-            scraper.run(max_articles=30)
+            scraper.run(max_articles=10)
     finally:
         driver.quit()

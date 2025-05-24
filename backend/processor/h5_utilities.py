@@ -22,7 +22,7 @@ def createDataset(content, link, date, crypto, note, datasetFileName="dataset"):
         return
 
     # Encodage en array d'objets
-    crypto = np.array([",".join(c) for c in [["crypto1", "crypto2"], ["crypto3", "crypto4", "crypto5"]]], dtype='S')
+    crypto = np.array([",".join(c) for c in crypto], dtype='S')
 
     with h5py.File(datasetFileName + ".h5", 'w') as f:
         f.create_dataset('content', data=content, compression="gzip", chunks=True, maxshape=(None,))
@@ -34,7 +34,22 @@ def createDataset(content, link, date, crypto, note, datasetFileName="dataset"):
 
         # Optionnel : Ajouter des métadonnées pour mieux organiser
         f.attrs['description'] = 'Dataset d\'articles pour classification'
-        f.attrs['source'] = 'Internet'
+        f.attrs['source'] = 'Internet : \n - https://crypto.news/markets/ \n - https://u.today/latest-cryptocurrency-news \n - https://beincrypto.com/news/ '
+        f.attrs['placeholderContent'] = True
+
+def remove_first_item(datasetFileName="dataset"):
+    """
+    Do not run if dataset have only the placeholder entry !
+    """
+    with h5py.File(datasetFileName + ".h5", 'r+') as f:
+        for name in f.keys():
+            print(f"Traitement du dataset : {name}")
+            dset = f[name]
+            
+            dset[:len(dset)-1] = dset[1:]
+            
+            dset.resize((len(dset) - 1,))
+        
 
 def appendArticleToDataset(new_content, new_link, new_date, new_crypto, new_note, datasetFileName="dataset"):
     if not checkDatasetExist(datasetFileName):
@@ -60,6 +75,72 @@ def appendArticleToDataset(new_content, new_link, new_date, new_crypto, new_note
             dset.resize((new_shape,))
             dset[old_shape:] = new_data
 
+def getDataset(datasetFileName="dataset",isTrainDataset=False):
+    with h5py.File(datasetFileName + ".h5", 'r') as f:
+        content = [c.decode('utf-8') for c in f['content'][:]]
+        link = [c.decode('utf-8') for c in f['link'][:]]
+        date = [c.decode('utf-8') for c in f['date'][:]]
+        crypto = [c.decode().split(",") for c in f['crypto'][:]]
+        note =  f['note'][:]
+
+    if isTrainDataset:
+        return content, link, date, crypto, note
+    else:
+        return content, link, date, crypto
+
+def getArticleDataset(index,datasetFileName="dataset",isTrainDataset=False):
+    content, link, date, crypto, note = getDataset(datasetFileName=datasetFileName,isTrainDataset=isTrainDataset)
+
+    content = content[index]
+    link = link[index]
+    date = date[index]
+    crypto = crypto[index]
+    note = note[index]
+
+    if isTrainDataset:
+        return content, link, date, crypto, note
+    else:
+        return content, link, date, crypto
+
+def getDatasetLength(datasetFileName="dataset"):
+    content, link, date, crypto = getDataset(datasetFileName=datasetFileName)
+    return len(content)
+
+def getDatasetPlaceholderAttribute(datasetFileName="dataset"):
+    with h5py.File(datasetFileName + ".h5", 'r') as f:
+        placeHolderAttribute = f.attrs['placeholderContent']
+    return placeHolderAttribute
+
+def setDatasetPlaceholderAttribute(newValue,datasetFileName="dataset"):
+    with h5py.File(datasetFileName + ".h5", "r+") as f:
+        f.attrs['placeholderContent'] = newValue
+
+def updateArticleDataset(index, new_content, new_link, new_date, new_crypto, new_note=None, datasetFileName="dataset", isTrainDataset=False):
+    try:
+        with h5py.File(datasetFileName + ".h5", 'r+') as f:
+            # Strings simples : on encode direct en bytes
+            f['content'][index] = new_content.encode('utf-8')
+            f['link'][index] = new_link.encode('utf-8')
+            f['date'][index] = new_date.encode('utf-8')
+            
+            # Liste de strings crypto -> string joinée + encodée
+            crypto_str = ",".join(new_crypto)
+            f['crypto'][index] = crypto_str.encode('utf-8')
+
+            # Note si dataset d'entraînement
+            if isTrainDataset and new_note is not None:
+                f['note'][index] = new_note
+
+            print(f"Article à l’index {index} mis à jour avec succès.")
+    
+    except IndexError:
+        print("Erreur : index en dehors des limites.")
+    except KeyError as e:
+        print(f"Erreur : champ manquant dans le dataset ({e}).")
+    except Exception as e:
+        print(f"Erreur inattendue : {e}")
+
+
 
 def readDataset(datasetFileName="dataset"):
     with h5py.File(datasetFileName + ".h5", 'r') as f:
@@ -69,6 +150,8 @@ def readDataset(datasetFileName="dataset"):
 
         print("Contenu du fichier HDF5 :")
         print(f.keys())
+
+        print("Number of data : ",len(f['content']))
 
         content = [c.decode('utf-8') for c in f['content'][:]]
         link = [c.decode('utf-8') for c in f['link'][:]]
@@ -83,17 +166,30 @@ def readDataset(datasetFileName="dataset"):
         print("Note : ", note)
 
 
-createDataset(["Content1","Content2"],["url1","url2"],["test","test2"],[["cypto1","crypto2"],["crypto3","crypto4"]],[0.5,0.8])
+if __name__ == "__main__":
+    createDataset(["Content"],["url"],["test"],[["List","crypto"]],[0.5], "dataset")
+    
+    readDataset("dataset")
 
-readDataset()
+    
 
-appendArticleToDataset(
-    new_content="Nouvel article",
-    new_link="https://example.com/article",
-    new_date="2025-05-20",
-    new_crypto=["btc"],
-    new_note=0.92
-)
+    # FOR DEBUG ONLY
+    # appendArticleToDataset(
+    #     new_content="Nouvel article",
+    #     new_link="https://example.com/article",
+    #     new_date="2025-05-20",
+    #     new_crypto=["btc"],
+    #     new_note=0.0
+    # )
 
+    #remove_first_item()
 
-readDataset()
+    # updateArticleDataset(
+    #     index=0,
+    #     new_content="article 0",
+    #     new_link="https://example0.com/article",
+    #     new_date="2025-05-18",
+    #     new_crypto=["Ether"],
+    #     new_note=0.92,
+    #     isTrainDataset=True
+    # )

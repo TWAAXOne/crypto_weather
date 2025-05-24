@@ -1,30 +1,21 @@
-import json
 import pyperclip
+import h5_utilities
 
-def placeholder(content, date, link, note):
-    print("Traitement de l'article...")
-    print(f"- Content (début) : {content[:50]}...")
-    print(f"- Date : {date}")
-    print(f"- Link : {link}")
-    print(f"- Note : {note}")
-    print("Appel de la fonction terminé.\n")
+def addNoteToDataset(index, content, link, date, crypto, note, dataset):
+    h5_utilities.updateArticleDataset(index,content,link,date,crypto,note,dataset,True)
+    print(h5_utilities.getArticleDataset(index,dataset, isTrainDataset=True))
 
-def process_json_with_prompt(json_file, prompt_text):
-    try:
-        with open(json_file, 'r', encoding='utf-8') as f:
-            data = json.load(f)
-    except Exception as e:
-        print(f"Erreur lors de la lecture du fichier JSON : {e}")
-        return
+def process_dataset_with_prompt(dataset, prompt_text):
 
-    for i, item in enumerate(data):
-        content = item.get('content', '')
-        date = item.get('date', '')
-        link = item.get('link', '')
+    lenDataset = h5_utilities.getDatasetLength(dataset)
+
+    for i in range(0,lenDataset):
+        content, link, date, crypto, note = h5_utilities.getArticleDataset(i,dataset, isTrainDataset=True)
 
         full_text = f"{prompt_text}\n\n{content}"
+        print(full_text)
         pyperclip.copy(full_text)
-        print(f"\nArticle {i+1}/{len(data)} copié dans le presse-papiers.")
+        print(f"\nArticle {i+1}/{lenDataset} copié dans le presse-papiers.")
         print("Collez-le (Ctrl+V) si vous voulez vérifier.")
 
         while True:
@@ -32,10 +23,12 @@ def process_json_with_prompt(json_file, prompt_text):
                 note = float(input("Entrez une note pour cet article : "))
                 break
             except ValueError:
-                print("⚠️ Entrée invalide. Veuillez entrer un nombre.")
+                print("Entrée invalide. Veuillez entrer un nombre.")
 
-        placeholder(content, date, link, note)
+        addNoteToDataset(i, content, link, date, crypto, note, dataset)
 
     print("Tous les articles ont été traités.")
 
-process_json_with_prompt("articles.json", "Voici un article, donne-lui une note de pertinence :")
+if __name__ == "__main__":
+    prompt = "Voici un article, donne-lui une note de pertinence : "
+    process_dataset_with_prompt("dataset", prompt)
