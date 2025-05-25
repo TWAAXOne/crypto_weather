@@ -1,4 +1,5 @@
 import time
+import re
 from selenium import webdriver
 from selenium.common.exceptions import StaleElementReferenceException
 from selenium.webdriver.chrome.options import Options
@@ -14,12 +15,27 @@ parent_dir = os.path.join(script_dir, '..')
 sys.path.append(os.path.abspath(parent_dir))
 
 from processor import h5_utilities, emoji_handler
+from processor.sentiment import compute_sentiment
 
 
 CRYPTO_KEYWORDS = [
     "Bitcoin","BTC","Ethereum","ETH","Tether","USDT","XRP",
     "Binance Coin","BNB","Solana","SOL","USD Coin","USDC",
     "Dogecoin","DOGE","Cardano","ADA","TRON","TRX"
+]
+
+# Définition des cryptos et leurs alias
+CRYPTO_DEFINITIONS = [
+    {"name": "Bitcoin", "aliases": ["bitcoin", "btc"]},
+    {"name": "Ethereum", "aliases": ["ethereum", "eth"]},
+    {"name": "Tether", "aliases": ["tether", "usdt"]},
+    {"name": "XRP", "aliases": ["xrp", "ripple"]},
+    {"name": "Binance Coin", "aliases": ["binance coin", "bnb"]},
+    {"name": "Solana", "aliases": ["solana", "sol"]},
+    {"name": "USD Coin", "aliases": ["usd coin", "usdc"]},
+    {"name": "Dogecoin", "aliases": ["dogecoin", "doge"]},
+    {"name": "Cardano", "aliases": ["cardano", "ada"]},
+    {"name": "TRON", "aliases": ["tron", "trx"]}
 ]
 
 class CryptoScraper:
@@ -49,6 +65,21 @@ class CryptoScraper:
     def _matches_keyword(self, text):
         t = text.lower()
         return any(kw.lower() in t for kw in CRYPTO_KEYWORDS)
+    
+    def detect_cryptos(self, text: str, definitions=CRYPTO_DEFINITIONS) -> list[str]:
+        """
+        Parcourt `definitions` pour trouver les alias présents dans `text`.
+        Retourne une liste unique des `name` des cryptos détectées.
+        """
+        detected = set()
+        text_lower = text.lower()
+        for crypto in definitions:
+            for alias in crypto["aliases"]:
+                # mot entier uniquement (\b…\b)
+                if re.search(rf"\b{re.escape(alias)}\b", text_lower):
+                    detected.add(crypto["name"])
+                    break
+        return list(detected)
 
     def _open_and_scrape(self, link):
         self.driver.execute_script("window.open(arguments[0]);", link)
@@ -78,9 +109,15 @@ class CryptoScraper:
             print("Extrait:", content, "…")
 
             #Put regex crypto here
-            list_crypto = ["btc","ether"]
+            list_crypto = self.detect_cryptos(content)
 
-            h5_utilities.appendArticleToDataset(content,link,date,list_crypto,0.0,self.h5FileName)
+            print("Cryptos détectées :", list_crypto or "Aucune")
+
+            #TODO : sentiment analysis
+            sentiment_score = compute_sentiment(content)
+            print("Sentiment score :", sentiment_score)
+            h5_utilities.appendArticleToDataset(content,link,date,list_crypto,sentiment_score,self.h5FileName)
+            
             if self.havePlaceholder:
                 if h5_utilities.getDatasetPlaceholderAttribute(self.h5FileName):
                     print("Remove placeholder content")
@@ -186,6 +223,6 @@ if __name__ == "__main__":
         for cfg in sites:
             print("\n\n▶▶▶ Scraping", cfg["base_url"])
             scraper = CryptoScraper(driver, cfg)
-            scraper.run(max_articles=10)
+            scraper.run(max_articles=-1)
     finally:
         driver.quit()
