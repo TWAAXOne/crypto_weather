@@ -189,7 +189,8 @@ class CryptoScraper:
                 except:
                     return
 
-if __name__ == "__main__":
+def main():
+    """Point d’entrée pour le scraping depuis un autre module."""
     opts = Options()
     opts.add_argument("--headless")
     driver = webdriver.Chrome(options=opts)
@@ -226,3 +227,6 @@ if __name__ == "__main__":
             scraper.run(max_articles=-1)
     finally:
         driver.quit()
+
+if __name__ == "__main__":
+    main()
