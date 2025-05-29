@@ -1,8 +1,13 @@
 import time
 
 from selenium import webdriver
+from selenium.common.exceptions import (
+    StaleElementReferenceException,
+    TimeoutException
+)
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
+from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 
 # Top 10 cryptos de CoinMarketCap (stocké en dur)
@@ -19,128 +24,162 @@ CRYPTO_KEYWORDS = [
     "TRON", "TRX"
 ]
 
+# Nombre maximal de tentatives de scroll pour charger plus d'articles
 MAX_SCROLL_ATTEMPTS = 5
 
-def init_driver(headless=True):
-    chrome_options = Options()
-    if headless:
-        chrome_options.add_argument("--headless")
-    chrome_options.add_argument("--disable-gpu")
-    chrome_options.add_argument("--no-sandbox")
-    chrome_options.add_argument("--disable-dev-shm-usage")
-    chrome_options.add_argument("--log-level=3")
-    return webdriver.Chrome(options=chrome_options)
+class UTodayScraper:
+    def __init__(self, headless=True, max_articles=-1):
+        self.headless = headless
+        self.max_articles = max_articles
+        self.seen_links = set()
+        self.scraped_count = 0
+        self.driver = self._init_driver()
 
-def small_scroll(driver, element=None, pixels=300):
-    """
-    Si `element` est fourni, scroll jusqu'à lui puis on descend encore de `pixels`.
-    Sinon, on scroll simplement de `pixels`.
-    """
-    if element:
-        driver.execute_script(
-            "arguments[0].scrollIntoView(); window.scrollBy(0, arguments[1]);",
-            element, pixels
+    def _init_driver(self):
+        chrome_options = Options()
+        if self.headless:
+            chrome_options.add_argument("--headless")
+        chrome_options.add_argument("--disable-gpu")
+        chrome_options.add_argument("--no-sandbox")
+        chrome_options.add_argument("--disable-dev-shm-usage")
+        chrome_options.add_argument("--log-level=3")
+        return webdriver.Chrome(options=chrome_options)
+
+    def _clear_cookie_banner(self):
+        try:
+            btn = self.driver.find_element(By.CSS_SELECTOR, "#cookie-consent button, .cookie-consent button")
+            btn.click()
+        except Exception:
+            self.driver.execute_script(
+                "document.querySelectorAll('#cookie-consent, .cookie-consent').forEach(e => e.remove());"
+            )
+
+    def _safe_find_elements(self, selector, timeout=10):
+        return WebDriverWait(self.driver, timeout).until(
+            EC.presence_of_all_elements_located((By.CSS_SELECTOR, selector))
         )
-    else:
-        driver.execute_script("window.scrollBy(0, arguments[0]);", pixels)
 
-def wait_for_new_articles(driver, old_count, timeout=10):
-    """
-    Attend que le nombre de liens augmente.
-    """
-    try:
-        WebDriverWait(driver, timeout).until(
-            lambda d: len(d.find_elements(By.CSS_SELECTOR, "a.news__item-body")) > old_count
-        )
-        return True
-    except:
-        return False
+    def _small_scroll(self, element=None, pixels=300):
+        if element:
+            self.driver.execute_script(
+                "arguments[0].scrollIntoView(); window.scrollBy(0, arguments[1]);",
+                element, pixels
+            )
+        else:
+            self.driver.execute_script("window.scrollBy(0, arguments[0]);", pixels)
 
-def scrape_u_today(driver, max_articles=-1):
-    base_url = "https://u.today/latest-cryptocurrency-news"
-    driver.get(base_url)
-    print("Scraping U.Today...")
-    scraped = 0
-    seen_links = set()
+    def _wait_for_new_articles(self, old_count, timeout=10):
+        try:
+            WebDriverWait(self.driver, timeout).until(
+                lambda d: len(d.find_elements(By.CSS_SELECTOR, "a.news__item-body")) > old_count
+            )
+            return True
+        except TimeoutException:
+            return False
 
-    while True:
-        # 1) récupérer tous les liens d'articles
-        items = driver.find_elements(By.CSS_SELECTOR, "a.news__item-body")
-        if 0 <= max_articles <= scraped:
-            break
+    def _retry_on_stale(self, fn, retries=3, delay=1):
+        for _ in range(retries):
+            try:
+                return fn()
+            except StaleElementReferenceException:
+                time.sleep(delay)
+        return fn()
 
-        print(f"Articles déjà scrapés : {scraped}")
-        for item in items:
-            link_text = item.text or ""
-            # Filtrer selon le top 10, insensible à la casse
-            if not any(keyword.lower() in link_text.lower() for keyword in CRYPTO_KEYWORDS):
-                continue
+    def stream_articles(self):
+        """
+        Générateur qui yield dicts: {'url': ..., 'date': ..., 'content': ...}
+        """
+        base_url = "https://u.today/latest-cryptocurrency-news"
+        self.driver.get(base_url)
+        self._clear_cookie_banner()
 
-            link = item.get_attribute("href")
-            if not link or link in seen_links:
-                continue
-            seen_links.add(link)
-
-            print(f"Ouverture de {link}…")
-            # 2) ouvrir l'article dans un nouvel onglet
-            driver.execute_script("window.open(arguments[0]);", link)
-            driver.switch_to.window(driver.window_handles[1])
+        selector = "a.news__item-body"
+        while True:
+            if 0 <= self.max_articles <= self.scraped_count:
+                break
 
             try:
-                # attendre que le chargement statique soit complet
-                WebDriverWait(driver, 10).until(
-                    lambda d: d.execute_script("return document.readyState") == "complete"
-                )
-
-                # 3) récupérer la date via .article__short-date
-                try:
-                    date = driver.find_element(By.CSS_SELECTOR, ".article__short-date").text
-                except:
-                    date = "Date non trouvée"
-
-                # 4) scraper tous les <p>
-                paragraphs = driver.find_elements(By.CSS_SELECTOR, "div.article__content p")
-                text = "\n".join(p.text for p in paragraphs)
-
-                print(f"\n=== Article #{scraped + 1} ===")
-                print(f"URL   : {link}")
-                print(f"Date  : {date}")
-                print(f"Extrait:\n{text}…\n")
-
-            except Exception as e:
-                print(f" Erreur sur {link} : {e}")
-            finally:
-                driver.close()
-                driver.switch_to.window(driver.window_handles[0])
-
-            scraped += 1
-            if 0 <= max_articles <= scraped:
+                items = self._safe_find_elements(selector)
+            except TimeoutException:
                 break
-        else:
-            # 5) si on arrive au bout sans avoir atteint max, on scroll plusieurs fois
-            old_count = len(items)
+
+            total = len(items)
+            for idx in range(total):
+                if 0 <= self.max_articles <= self.scraped_count:
+                    break
+
+                try:
+                    item = self.driver.find_elements(By.CSS_SELECTOR, selector)[idx]
+                except (IndexError, StaleElementReferenceException):
+                    continue
+
+                text = item.text or ""
+                if not any(kw.lower() in text.lower() for kw in CRYPTO_KEYWORDS):
+                    continue
+
+                try:
+                    url = item.get_attribute('href')
+                except StaleElementReferenceException:
+                    continue
+                if not url or url in self.seen_links:
+                    continue
+                self.seen_links.add(url)
+
+                # Ouvrir l'article et extraire date & contenu
+                self.driver.execute_script("window.open(arguments[0]);", url)
+                self.driver.switch_to.window(self.driver.window_handles[-1])
+                try:
+                    WebDriverWait(self.driver, 10).until(
+                        lambda d: d.execute_script("return document.readyState") == "complete"
+                    )
+                    # Date
+                    def grab_date():
+                        return self.driver.find_element(By.CSS_SELECTOR, ".article__short-date").text
+                    try:
+                        date = self._retry_on_stale(grab_date)
+                    except TimeoutException:
+                        date = None
+                    # Contenu
+                    def grab_content():
+                        paras = self.driver.find_elements(By.CSS_SELECTOR, "div.article__content p")
+                        return "\n".join(p.text for p in paras)
+                    content = self._retry_on_stale(grab_content)
+
+                    yield {'url': url, 'date': date, 'content': content}
+                    self.scraped_count += 1
+                except Exception:
+                    pass
+                finally:
+                    self.driver.close()
+                    self.driver.switch_to.window(self.driver.window_handles[0])
+
+            # Pagination via scroll
+            old_count = total
+            self._clear_cookie_banner()
             loaded = False
             for attempt in range(1, MAX_SCROLL_ATTEMPTS + 1):
                 if items:
-                    small_scroll(driver, element=items[-1], pixels=300 * attempt)
+                    self._small_scroll(element=items[-1], pixels=300 * attempt)
                 else:
-                    small_scroll(driver, pixels=300 * attempt)
-                time.sleep(1)
-                if wait_for_new_articles(driver, old_count):
+                    self._small_scroll(pixels=300 * attempt)
+                # time.sleep(1)
+                if self._wait_for_new_articles(old_count):
                     loaded = True
                     break
             if not loaded:
                 break
-            continue
 
-        break
+    def close(self):
+        self.driver.quit()
 
-    print(f"\n Scraping terminé : {scraped} articles récupérés.")
 
-if __name__ == "__main__":
-    driver = init_driver(headless=True)
+if __name__ == '__main__':
+    scraper = UTodayScraper(headless=True, max_articles=-1)
     try:
-        # max_articles=-1 pour scraper sans limite
-        scrape_u_today(driver, max_articles=-1)
+        for article in scraper.stream_articles():
+            print(f"URL: {article['url']}")
+            print(f"Date: {article['date']}")
+            print(f"Extrait: {article['content'][:200]}…")
+            print("---")
     finally:
-        driver.quit()
+        scraper.close()
