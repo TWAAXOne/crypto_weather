@@ -36,6 +36,9 @@ def createDataset(content, link, date, crypto, note, datasetFileName="dataset"):
         f.attrs['description'] = 'Dataset d\'articles pour classification'
         f.attrs['source'] = 'Internet : \n - https://crypto.news/markets/ \n - https://u.today/latest-cryptocurrency-news \n - https://beincrypto.com/news/ '
         f.attrs['placeholderContent'] = True
+        f.attrs['last_news_cryptoNews'] = 'None'
+        f.attrs['last_news_uToday'] = 'None'
+        f.attrs['last_news_beInCrypto'] = 'None'
 
 def remove_first_item(datasetFileName="dataset"):
     """
@@ -114,6 +117,27 @@ def getDatasetPlaceholderAttribute(datasetFileName="dataset"):
 def setDatasetPlaceholderAttribute(newValue,datasetFileName="dataset"):
     with h5py.File(datasetFileName + ".h5", "r+") as f:
         f.attrs['placeholderContent'] = newValue
+
+def getUrlAttribute(website,datasetFileName="dataset"):
+    """
+    website_value : str
+        'last_news_cryptoNews'
+        'last_news_uToday'
+        'last_news_beInCrypto'
+    """
+    with h5py.File(datasetFileName + ".h5", 'r') as f:
+        placeHolderAttribute = f.attrs[website]
+    return placeHolderAttribute
+
+def setUrlAttribute(website,newValue,datasetFileName="dataset"):
+    """
+    website_value : str
+        'last_news_cryptoNews'
+        'last_news_uToday'
+        'last_news_beInCrypto'
+    """
+    with h5py.File(datasetFileName + ".h5", "r+") as f:
+        f.attrs[website] = newValue
 
 def updateArticleDataset(index, new_content, new_link, new_date, new_crypto, new_note=None, datasetFileName="dataset", isTrainDataset=False):
     try:
