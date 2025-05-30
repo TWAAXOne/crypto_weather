@@ -1,3 +1,4 @@
+# crypto_news_scraper.py
 import time
 from selenium import webdriver
 from selenium.common.exceptions import (

@@ -1,18 +1,22 @@
+# main.py
 import logging
 import os
 import sys
 from datetime import datetime, timedelta
+import threading
+import time
+from typing import Optional
 
 import pandas as pd
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 
-# === Ensure backend/ is on PYTHONPATH so `import scraping…` works ===
-BASE_DIR     = os.path.dirname(os.path.abspath(__file__))       # .../project/backend
+# === Ensure backend/ is on PYTHONPATH so imports work ===
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, BASE_DIR)
 
-# now this will resolve to backend/scraping/generic_scraper.py
-from scraping.generic_scraper import main as run_generic_scraper
+# Import du module de scraping
+from scraping.store_data import storeData
 from processor.h5_utilities import getDataset, getDatasetLength
 
 # ==== Logging Configuration ====
@@ -23,8 +27,20 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+
+os.environ["TOKENIZERS_PARALLELISM"] = "false" # pour éviter les warnings de tokenizers
+
 # ==== Paths ====
-PROJECT_ROOT = os.path.abspath(os.path.join(BASE_DIR, ".."))    # project root; dataset.h5 lives here
+PROJECT_ROOT = os.path.abspath(os.path.join(BASE_DIR, ".."))
+
+# ==== Global variables for background scraping ====
+scraping_thread: Optional[threading.Thread] = None
+scraping_active = False
+last_scraping_time: Optional[datetime] = None
+data_cache = {}
+cache_lock = threading.Lock()
+cache_update_time: Optional[datetime] = None
+
 
 # ==== Crypto Definitions ====
 CRYPTO_DEFINITIONS = [
@@ -48,20 +64,19 @@ def get_sentiment_status(avg_score: float) -> str:
     return "Extreme greed"
 
 def read_h5_and_compute() -> dict:
-    # 1) Load HDF5 from project root
+    """Lit le fichier H5 et calcule les métriques"""
     h5_path = os.path.join(PROJECT_ROOT, "dataset.h5")
     if not os.path.exists(h5_path):
         raise FileNotFoundError(f"{h5_path} not found")
 
-    base_name = os.path.splitext(h5_path)[0]  # e.g. "/.../dataset"
+    base_name = os.path.splitext(h5_path)[0]
 
     content, links, dates, cryptos, sentiments = getDataset(
         datasetFileName=base_name,
         isTrainDataset=True
     )
 
-    # 2) Build DataFrame
-    dt = pd.to_datetime(dates, errors="coerce", utc=True).tz_convert(None)
+    dt = pd.to_datetime(dates, format='mixed', errors="coerce", utc=True).tz_convert(None)
     df = pd.DataFrame({
         "date":      dt,
         "crypto":    cryptos,
@@ -80,7 +95,7 @@ def read_h5_and_compute() -> dict:
 
     result = {}
 
-    # 3) Global counts, averages & statuses
+    # Global counts, averages & statuses
     for label, cutoff in windows.items():
         sub   = df[df["date"] >= cutoff]
         count = len(sub)
@@ -89,7 +104,7 @@ def read_h5_and_compute() -> dict:
         result[f"avg_{label}"]    = round(avg, 4)
         result[f"status_{label}"] = get_sentiment_status(avg)
 
-    # 4) Daily timeseries
+    # Daily timeseries
     df_daily = (
         df.set_index("date")["sentiment"]
           .resample("D").mean().fillna(0.0)
@@ -100,7 +115,7 @@ def read_h5_and_compute() -> dict:
         "sentiments": [float(x) for x in df_daily["sentiment"].tolist()]
     }
 
-    # 5) Per‐crypto metrics
+    # Per-crypto metrics
     per_crypto = {}
     for cd in CRYPTO_DEFINITIONS:
         name = cd["name"]
@@ -116,7 +131,7 @@ def read_h5_and_compute() -> dict:
         per_crypto[name] = stats
     result["per_crypto"] = per_crypto
 
-    # 6) 100 most recent articles
+    # 100 most recent articles
     df_sorted = df.sort_values("date", ascending=False).head(100)
     result["recent_articles"] = [
         {
@@ -135,32 +150,162 @@ def read_h5_and_compute() -> dict:
         )
     ]
 
-    # 7) Total dataset length
+    # Total dataset length
     result["dataset_length"] = int(getDatasetLength(datasetFileName=base_name))
+    
+    # Ajouter le statut du scraping et l'heure de mise à jour
+    result["scraping_active"] = scraping_active
+    result["last_scraping_time"] = last_scraping_time.isoformat() if last_scraping_time else None
+    result["cache_update_time"] = cache_update_time.isoformat() if cache_update_time else None
+    result["scraping_thread_alive"] = scraping_thread.is_alive() if scraping_thread else False
+    
 
     return result
+
+def update_cache():
+    """Met à jour le cache avec les dernières données"""
+    global data_cache, cache_update_time
+    try:
+        new_data = read_h5_and_compute()
+        with cache_lock:
+            data_cache = new_data
+            cache_update_time = datetime.utcnow()
+        logger.info(f"Cache updated at {cache_update_time}")
+    except Exception as e:
+        logger.error(f"Error updating cache: {e}")
+
+def continuous_scraping():
+    """Fonction de scraping continu qui tourne en arrière-plan"""
+    global scraping_active, last_scraping_time
+    
+    logger.info("Starting continuous scraping thread...")
+    
+    while scraping_active:
+        try:
+            logger.info("Starting new scraping cycle...")
+            last_scraping_time = datetime.utcnow()
+            
+            
+            # Scraper les deux sites avec limite élevée
+            logger.info("Scraping cryptoNews...")
+            result1 = storeData("cryptoNews", nbArticle=10000, h5FileName="dataset")
+            
+            logger.info("Scraping uToday...")
+            result2 = storeData("uToday", nbArticle=10000, h5FileName="dataset")
+            
+            
+            logger.info(f"Scraping cycle completed at {last_scraping_time}")
+            logger.info(f"Articles scraped - cryptoNews: {result1 if result1 else 0}, uToday: {result2 if result2 else 0}")
+            
+            # Courte pause avant le prochain cycle
+            time.sleep(10)
+            
+        except Exception as e:
+            logger.error(f"Error in scraping cycle: {e}")
+            # En cas d'erreur, pause de 60 secondes avant de réessayer
+            time.sleep(60)
+
+    logger.info("Continuous scraping stopped")
+
+# Thread pour mettre à jour le cache régulièrement
+def cache_updater():
+    """Met à jour le cache toutes les 10 secondes"""
+    while True:
+        time.sleep(10)
+        update_cache()
 
 # ==== FastAPI Application ====
 app = FastAPI()
 logger.info("FastAPI app initialized.")
 
+# Démarrer le thread de mise à jour du cache
+cache_thread = threading.Thread(target=cache_updater, daemon=True)
+cache_thread.start()
+logger.info("Cache updater thread started")
+
+# Charger les données initiales au démarrage
+@app.on_event("startup")
+async def startup_event():
+    """Charge les données initiales dans le cache au démarrage"""
+    try:
+        update_cache()
+        logger.info("Initial data loaded into cache")
+    except Exception as e:
+        logger.error(f"Error loading initial data: {e}")
+
 @app.get("/sentiment_summary", response_class=JSONResponse)
 def sentiment_summary():
+    """Retourne les données depuis le cache (mis à jour toutes les 10 secondes)"""
     try:
-        return read_h5_and_compute()
-    except FileNotFoundError as e:
-        logger.error(str(e))
-        return JSONResponse(status_code=404, content={"error": str(e)})
+        # Si le cache est vide, essayer de le charger
+        if not data_cache:
+            update_cache()
+        
+        # Retourner les données du cache
+        with cache_lock:
+            return data_cache.copy()
+            
+    except Exception as e:
+        logger.error(f"Error in sentiment_summary: {e}")
+        return JSONResponse(
+            status_code=500, 
+            content={"error": str(e), "message": "Error retrieving data"}
+        )
 
 @app.post("/engage_analysis", response_class=JSONResponse)
 async def engage_analysis():
-    logger.info("Launching scraper to update dataset.h5")
+    """Lance le scraping continu en arrière-plan et retourne les données actuelles"""
+    global scraping_thread, scraping_active
+    
     try:
-        run_generic_scraper()
+        # Si le scraping n'est pas déjà actif, le démarrer
+        if not scraping_active or scraping_thread is None or not scraping_thread.is_alive():
+            scraping_active = True
+            
+            scraping_thread = threading.Thread(target=continuous_scraping, daemon=True)
+            scraping_thread.start()
+            logger.info("Scraping thread started")
+            
+            # Mettre à jour le cache immédiatement
+            update_cache()
+            
+            # Retourner les données actuelles
+            with cache_lock:
+                return data_cache.copy()
+        else:
+            logger.info("Scraping already active, returning current data")
+            # Si le scraping est déjà actif, retourner simplement les données actuelles
+            with cache_lock:
+                return data_cache.copy()
+            
     except Exception as e:
-        logger.error(f"Error running scraper: {e}")
-    try:
-        return read_h5_and_compute()
-    except FileNotFoundError as e:
-        logger.error(str(e))
-        return JSONResponse(status_code=500, content={"error": str(e)})
+        logger.error(f"Error in engage_analysis: {e}")
+        return JSONResponse(
+            status_code=500,
+            content={"error": str(e), "message": "Error starting analysis"}
+        )
+
+@app.post("/stop_analysis", response_class=JSONResponse)
+async def stop_analysis():
+    """Arrête le scraping continu (optionnel)"""
+    global scraping_active
+    
+    scraping_active = False
+    logger.info("Scraping stop requested")
+    
+    return {
+        "status": "Scraping stopped",
+        "message": "Continuous scraping has been stopped.",
+        "scraping_active": False
+    }
+
+# Endpoint de santé pour vérifier le statut
+@app.get("/health", response_class=JSONResponse)
+def health():
+    """Endpoint de santé pour vérifier le statut du service"""
+    return {
+        "status": "healthy",
+        "scraping_active": scraping_active,
+        "last_scraping_time": last_scraping_time.isoformat() if last_scraping_time else None,
+        "cache_update_time": cache_update_time.isoformat() if cache_update_time else None
+    }

@@ -1,3 +1,4 @@
+# store_data.py
 import sys
 import os
 import re
@@ -7,11 +8,11 @@ script_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.join(script_dir, '..')
 sys.path.append(os.path.abspath(parent_dir))
 
-import crypto_news_scraper
-import u_today_scraper
+from . import crypto_news_scraper
+from . import u_today_scraper
 
 from processor import h5_utilities, emoji_handler
-#from processor.sentiment import compute_sentiment
+from processor.sentiment import compute_sentiment
 
 CRYPTO_DEFINITIONS = [
     {"name": "Bitcoin", "aliases": ["bitcoin", "btc"]},
@@ -64,6 +65,7 @@ def storeData(website="cryptoNews", nbArticle = -1, h5FileName="dataset"):
         case "beInCrypto":
             print("Scrapping beInCrypto !")
             h5Attribute = 'last_news_beInCrypto'
+            scraper = None  # Not implemented yet
 
     try:
         for article in scraper.stream_articles():
@@ -90,8 +92,7 @@ def storeData(website="cryptoNews", nbArticle = -1, h5FileName="dataset"):
 
                 print("Cryptos détectées :", list_crypto or "Aucune")
 
-                # sentiment_score = compute_sentiment(content)
-                sentiment_score = 0.5
+                sentiment_score = compute_sentiment(content)
 
                 h5_utilities.appendArticleToDataset(content,link,date,list_crypto,sentiment_score,h5FileName)
                 

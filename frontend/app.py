@@ -1,9 +1,11 @@
+# app.py (frontend)
 import streamlit as st
 import plotly.graph_objects as go
 import numpy as np
 import pandas as pd
 import requests
 import logging
+import time
 
 # === Logging Configuration ===
 logging.basicConfig(
@@ -35,36 +37,55 @@ Under the hood:
 SUMMARY_URL  = "http://0.0.0.0:8080/sentiment_summary"
 ANALYSIS_URL = "http://0.0.0.0:8080/engage_analysis"
 
+# Initialize session state
 if "running" not in st.session_state:
     st.session_state["running"] = False
+if "last_update" not in st.session_state:
+    st.session_state["last_update"] = None
 
-if st.button("Launch Analysis"):
-    st.session_state["running"] = True
+# Button to start/stop analysis with status on the same line
+col1, col2 = st.columns([1, 4])
+with col1:
+    if st.button("🚀 Launch Analysis" if not st.session_state["running"] else "⏹️ Stop Analysis"):
+        st.session_state["running"] = not st.session_state["running"]
+        if st.session_state["running"]:
+            st.session_state["last_update"] = time.time()
 
+with col2:
+    # Display analysis status in the same row
+    if st.session_state["running"]:
+        st.success("✅ Analysis is running - Data updates every 10 seconds")
+    else:
+        st.info("ℹ️ Click 'Launch Analysis' to start real-time sentiment tracking")
+        
+        
 def fetch_data():
+    """Fetch data from backend"""
     try:
         if st.session_state["running"]:
-            resp = requests.post(ANALYSIS_URL)
+            resp = requests.post(ANALYSIS_URL, timeout=30)
         else:
-            resp = requests.get(SUMMARY_URL)
+            resp = requests.get(SUMMARY_URL, timeout=30)
         resp.raise_for_status()
         return resp.json()
     except Exception as e:
         st.error(f"Error calling backend: {e}")
+        logger.error(f"Backend error: {e}")
         return {}
 
+# Fetch and display data
 data = fetch_data()
 
-# === Auto-refresh every 30s when running ===
-if st.session_state["running"]:
-    st.experimental_rerun()
-    st.experimental_sleep(30_000)
+# Display last update time if available
+if data.get("cache_update_time"):
+    st.caption(f"📅 Last data update: {data['cache_update_time']}")
 
 # === General Sentiment Section ===
 st.header("General Sentiment")
 st.markdown("---")
 
 def make_gauge(score: float, status: str, title: str):
+    """Create a gauge chart for sentiment visualization"""
     normalized = (score + 1) * 50
     hand_angle = 360 * (-normalized / 2) / 100 - 180
     labels = ["", "<b>Extreme Greed</b>", "<b>Greed</b>",
@@ -115,7 +136,7 @@ for col, window in zip([col1, col2, col3], ["24h", "7d", "30d"]):
     col.plotly_chart(
         make_gauge(avg, status, f"Last {window}"),
         use_container_width=True,
-        key=f"glob-{window}"
+        key=f"glob-{window}-{st.session_state.get('last_update', 0)}"
     )
     caption = "No data" if count == 0 else f"{count} articles"
     col.caption(caption)
@@ -125,7 +146,8 @@ if data.get("timeseries", {}).get("dates"):
     fig_ts = go.Figure(go.Scatter(
         x=data["timeseries"]["dates"],
         y=data["timeseries"]["sentiments"],
-        mode="lines+markers"
+        mode="lines+markers",
+        name="Sentiment"
     ))
     fig_ts.update_layout(
         title="Daily Average Sentiment Over Time",
@@ -133,9 +155,10 @@ if data.get("timeseries", {}).get("dates"):
         yaxis_title="Sentiment Score",
         yaxis_range=[-1, 1],
         xaxis_tickangle=-45,
-        margin=dict(t=40, b=40)
+        margin=dict(t=40, b=40),
+        showlegend=False
     )
-    st.plotly_chart(fig_ts, use_container_width=True, key="timeseries")
+    st.plotly_chart(fig_ts, use_container_width=True, key=f"timeseries-{st.session_state.get('last_update', 0)}")
 
 # === Sentiment by Cryptocurrency Section ===
 st.markdown("## Sentiment by Cryptocurrency")
@@ -144,7 +167,7 @@ st.markdown("---")
 if "per_crypto" in data:
     windows = ["1h", "24h", "7d", "30d"]
     for name, stats in data["per_crypto"].items():
-        # Don't display if all counts are zero (no data for this crypto at all)
+        # Don't display if all counts are zero
         non_zero = any(stats.get(f"count_{w}", 0) > 0 for w in windows)
         if not non_zero:
             continue
@@ -157,34 +180,35 @@ if "per_crypto" in data:
             col.plotly_chart(
                 make_gauge(avg, status, w),
                 use_container_width=True,
-                key=f"{name}-{w}"
+                key=f"{name}-{w}-{st.session_state.get('last_update', 0)}"
             )
             caption = "No data" if count == 0 else f"{count} articles"
             col.caption(caption)
 
 # === Recent Articles DataFrame ===
-df100 = None
 if data.get("recent_articles"):
     st.markdown("## 100 Most Recent Articles")
     df100 = pd.DataFrame(data["recent_articles"])
-    st.dataframe(df100, use_container_width=True)
+    st.dataframe(df100, use_container_width=True, key=f"articles-{st.session_state.get('last_update', 0)}")
 
-# === Dataset size at bottom ===
+# === Dataset info ===
 st.markdown("---")
-
-# If the dataset was loaded, use its length (from articles OR computed on DataFrame), else fallback to backend "dataset_length"
-dataset_count = 0
-if df100 is not None:
-    try:
-        # Estimate total from the most recent df if available (safer than trusting backend!)
-        dataset_count = data.get('dataset_length', 0)
-        # Prefer the backend-provided value, but if it is wrong, fallback
-        if dataset_count == 0:
-            # If 100 in df, but backend says 0, fallback to count of all recent_articles
-            dataset_count = len(df100)
-    except Exception:
-        dataset_count = data.get('dataset_length', 0)
-else:
-    dataset_count = data.get('dataset_length', 0)
-
+dataset_count = data.get('dataset_length', 0)
 st.markdown(f"**Number of items in our dataset:** {dataset_count}")
+
+# === Scraping Status ===
+if data.get("scraping_active") and data.get("scraping_thread_alive"):
+    st.success("🔄 Scraping is currently active")
+    if data.get("last_scraping_time"):
+        st.caption(f"Last scraping cycle: {data['last_scraping_time']}")
+elif data.get("scraping_active") and not data.get("scraping_thread_alive"):
+    st.warning("⚠️ Scraping thread has stopped - may have reached recent articles")
+elif st.session_state["running"]:
+    st.info("📊 Analysis mode active - using cached data")
+
+
+# Auto-refresh every 10 seconds when running
+if st.session_state["running"]:
+    time.sleep(10)
+    st.session_state["last_update"] = time.time()
+    st.rerun()
