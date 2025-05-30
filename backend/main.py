@@ -10,7 +10,6 @@ from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
-from scraping.scrape import run_scraper
 
 # ==== Logging Configuration ====
 logging.basicConfig(
@@ -90,9 +89,11 @@ def get_sentiment_status(avg_score: float) -> str:
 def engage_scraping_api():
     logger.info("Scraping request received.")
     try:
-        articles = run_scraper(max_articles=5)
-        logger.debug(f"Scraped {len(articles)} articles.")
-        return {"status": "success", "articles": articles}
+        # TODO : CALL SCRAPERS LOGIQUE HERE
+        # articles = run_scraper(max_articles=5)
+        # logger.debug(f"Scraped {len(articles)} articles.")
+        # return {"status": "success", "articles": articles}
+        return {"status": "success", "articles": ...}
     except Exception as e:
         logger.error(f"Scraping failed: {e}")
         return JSONResponse(status_code=500, content={"status": "error", "detail": str(e)})
