@@ -1,10 +1,15 @@
 import time
-
 from selenium import webdriver
-from selenium.common.exceptions import StaleElementReferenceException
+from selenium.common.exceptions import (
+    StaleElementReferenceException,
+    NoSuchElementException,
+    TimeoutException,
+    ElementClickInterceptedException
+)
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
 
 CRYPTO_KEYWORDS = [
     "Bitcoin", "BTC",
@@ -19,120 +24,178 @@ CRYPTO_KEYWORDS = [
     "TRON", "TRX"
 ]
 
-def init_driver(headless=True):
-    chrome_options = Options()
-    if headless:
-        chrome_options.add_argument("--headless")
-    chrome_options.add_argument("--disable-gpu")
-    chrome_options.add_argument("--no-sandbox")
-    chrome_options.add_argument("--disable-dev-shm-usage")
-    chrome_options.add_argument("--log-level=3")
-    return webdriver.Chrome(options=chrome_options)
+MAX_SCROLL_ATTEMPTS = 5
 
-def small_scroll(driver, element=None, pixels=300):
-    if element:
-        driver.execute_script(
-            "arguments[0].scrollIntoView(); window.scrollBy(0, arguments[1]);",
-            element, pixels
+class CryptoNewsMarketsScraper:
+    def __init__(self, headless=True, max_articles=-1):
+        self.headless = headless
+        self.max_articles = max_articles
+        self.scraped = 0
+        self.seen_links = set()
+        self.driver = self._init_driver()
+
+    def _init_driver(self):
+        chrome_options = Options()
+        if self.headless:
+            chrome_options.add_argument("--headless")
+        chrome_options.add_argument("--disable-gpu")
+        chrome_options.add_argument("--no-sandbox")
+        chrome_options.add_argument("--disable-dev-shm-usage")
+        chrome_options.add_argument("--log-level=3")
+        return webdriver.Chrome(options=chrome_options)
+
+    def _clear_cookie_banner(self):
+        try:
+            btn = self.driver.find_element(By.CSS_SELECTOR, "#cookie-consent button, .cookie-consent button")
+            btn.click()
+        except Exception:
+            self.driver.execute_script(
+                "document.querySelectorAll('#cookie-consent, .cookie-consent').forEach(e => e.remove());"
+            )
+
+    def _safe_find_elements(self, selector, timeout=10):
+        return WebDriverWait(self.driver, timeout).until(
+            EC.presence_of_all_elements_located((By.CSS_SELECTOR, selector))
         )
-    else:
-        driver.execute_script("window.scrollBy(0, arguments[0]);", pixels)
 
-def wait_for_new_articles(driver, old_count, timeout=10):
-    try:
-        WebDriverWait(driver, timeout).until(
-            lambda d: len(d.find_elements(By.CSS_SELECTOR, "a.post-loop__media-link")) > old_count
-        )
-        return True
-    except:
-        return False
+    def _small_scroll(self, element=None, pixels=300):
+        if element:
+            self.driver.execute_script(
+                "arguments[0].scrollIntoView(); window.scrollBy(0, arguments[1]);",
+                element, pixels
+            )
+        else:
+            self.driver.execute_script("window.scrollBy(0, arguments[0]);", pixels)
 
-def scrape_markets(driver, max_articles=-1):
-    base_url = "https://crypto.news/markets/"
-    driver.get(base_url)
+    def _wait_for_new_articles(self, old_count, timeout=10):
+        try:
+            WebDriverWait(self.driver, timeout).until(
+                lambda d: len(d.find_elements(By.CSS_SELECTOR, "a.post-loop__media-link")) > old_count
+            )
+            return True
+        except TimeoutException:
+            return False
 
-    scraped = 0
-    seen_links = set()
-
-    while True:
-        # 1) on compte dynamiquement les miniatures
-        selector = "a.post-loop__media-link"
-        total = len(driver.find_elements(By.CSS_SELECTOR, selector))
-
-        # stop si on a atteint le max
-        if 0 <= max_articles <= scraped:
-            break
-
-        # 2) on itère par indice en refetchant à chaque fois
-        for idx in range(total):
+    def _retry_find_text(self, selector, retries=3, delay=0.5, timeout=5):
+        for _ in range(retries):
             try:
-                thumb = driver.find_elements(By.CSS_SELECTOR, selector)[idx]
+                return WebDriverWait(self.driver, timeout).until(
+                    EC.presence_of_element_located((By.CSS_SELECTOR, selector))
+                ).text
+            except (StaleElementReferenceException, TimeoutException):
+                time.sleep(delay)
+        return None
+
+    def _retry_find_all_texts(self, selector, retries=3, delay=0.5):
+        for _ in range(retries):
+            try:
+                elems = self.driver.find_elements(By.CSS_SELECTOR, selector)
+                return [e.text for e in elems]
             except StaleElementReferenceException:
-                # si l'élément a disparu/rechargé, on passe au suivant
-                continue
+                time.sleep(delay)
+        return []
 
-            link_text = thumb.text or ""
-            # filtre top10
-            if not any(kw.lower() in link_text.lower() for kw in CRYPTO_KEYWORDS):
-                continue
+    def stream_articles(self):
+        base_url = "https://crypto.news/markets/"
+        self.driver.get(base_url)
+        self._clear_cookie_banner()
 
-            link = thumb.get_attribute("href")
-            if not link or link in seen_links:
-                continue
-            seen_links.add(link)
-
-            # ouvrir et scraper
-            driver.execute_script("window.open(arguments[0]);", link)
-            driver.switch_to.window(driver.window_handles[1])
+        selector = "a.post-loop__media-link"
+        while True:
+            if 0 <= self.max_articles <= self.scraped:
+                break
 
             try:
-                WebDriverWait(driver, 10).until(
+                thumbs = self._safe_find_elements(selector)
+            except TimeoutException:
+                break
+
+            total = len(thumbs)
+            for idx in range(total):
+                if 0 <= self.max_articles <= self.scraped:
+                    break
+
+                try:
+                    thumb = self.driver.find_elements(By.CSS_SELECTOR, selector)[idx]
+                except (IndexError, StaleElementReferenceException):
+                    continue
+
+                title = thumb.text or ""
+                if not any(kw.lower() in title.lower() for kw in CRYPTO_KEYWORDS):
+                    continue
+
+                try:
+                    url = thumb.get_attribute('href')
+                except StaleElementReferenceException:
+                    continue
+                if not url or url in self.seen_links:
+                    continue
+                self.seen_links.add(url)
+
+                self.driver.execute_script("window.open(arguments[0]);", url)
+                self.driver.switch_to.window(self.driver.window_handles[-1])
+
+                WebDriverWait(self.driver, 10).until(
                     lambda d: d.execute_script("return document.readyState") == "complete"
                 )
-                # date
-                try:
-                    date = driver.find_element(By.CSS_SELECTOR, ".post-detail__date").text
-                except:
-                    date = "Date non trouvée"
-                # contenu
-                paragraphs = driver.find_elements(By.CSS_SELECTOR, "div.post-detail__container p")
-                text_body = "\n".join(p.text for p in paragraphs)
 
-                print(f"\n=== Article #{scraped+1} ===")
-                print(f"URL   : {link}")
-                print(f"Date  : {date}")
-                print(f"Extrait:\n{text_body}…")
+                # retry global
+                success = False
+                for _ in range(3):
+                    try:
+                        date = self._retry_find_text('.post-detail__date') or 'Date non trouvée'
+                        paras = self._retry_find_all_texts('div.post-detail__container p')
+                        content = '\n'.join(paras)
+                        yield {'url': url, 'date': date, 'content': content}
+                        self.scraped += 1
+                        success = True
+                        break
+                    except Exception:
+                        time.sleep(1)
 
-            except Exception as e:
-                print(f" Échec chargement : {link} ({e})")
-            finally:
-                driver.close()
-                driver.switch_to.window(driver.window_handles[0])
+                if not success:
+                    # skip if permanently failing
+                    pass
 
-            scraped += 1
-            if 0 <= max_articles <= scraped:
-                break
-        else:
-            # si on n'a pas breaké pour max_articles, on scroll pour charger la suite
+                self.driver.close()
+                self.driver.switch_to.window(self.driver.window_handles[0])
+
+            # pagination
             old_count = total
-            if total:
-                # recalcule thumb pour la dernière miniature visible
-                last_thumb = driver.find_elements(By.CSS_SELECTOR, selector)[-1]
-                small_scroll(driver, element=last_thumb, pixels=300)
-            else:
-                small_scroll(driver, pixels=300)
-            time.sleep(1)
-            if not wait_for_new_articles(driver, old_count):
-                break
-            continue
+            self._clear_cookie_banner()
 
-        break
+            try:
+                btn = self.driver.find_element(By.CSS_SELECTOR, "button.alm-load-more-btn.more")
+                WebDriverWait(self.driver, 5).until(
+                    EC.element_to_be_clickable((By.CSS_SELECTOR, "button.alm-load-more-btn.more"))
+                )
+                self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", btn)
+                btn.click()
+                WebDriverWait(self.driver, 10).until(
+                    lambda d: d.find_element(By.CSS_SELECTOR, "button.alm-load-more-btn.more").text.strip().lower() == 'loading...'
+                )
+                if not self._wait_for_new_articles(old_count):
+                    break
+            except (NoSuchElementException, TimeoutException, ElementClickInterceptedException):
+                # fallback scroll
+                if thumbs:
+                    self._small_scroll(element=thumbs[-1], pixels=300)
+                else:
+                    self._small_scroll(pixels=300)
+                # time.sleep(1)
+                if not self._wait_for_new_articles(old_count):
+                    break
 
-    print(f"\n Scraping terminé : {scraped} articles récupérés.")
+    def close(self):
+        self.driver.quit()
 
-if __name__ == "__main__":
-    driver = init_driver(headless=True)
+if __name__ == '__main__':
+    scraper = CryptoNewsMarketsScraper(headless=True, max_articles=-1)
     try:
-        scrape_markets(driver, max_articles=-1)
+        for article in scraper.stream_articles():
+            print(f"URL: {article['url']}")
+            print(f"Date: {article['date']}")
+            print(f"Extrait: {article['content'][:200]}…")
+            print('---')
     finally:
-        driver.quit()
+        scraper.close()
