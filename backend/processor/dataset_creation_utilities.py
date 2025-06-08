@@ -30,5 +30,5 @@ def process_dataset_with_prompt(dataset, prompt_text):
     print("Tous les articles ont été traités.")
 
 if __name__ == "__main__":
-    prompt = "Voici un article, donne-lui une note de pertinence : "
-    process_dataset_with_prompt("dataset", prompt)
+    prompt = "Analyse le texte suivant et évalue le sentiment global à propos des cryptomonnaies sur une échelle de -1 à 1, où :\n-1 représente une peur extrême (panic sell, crash, effondrement, incertitude totale),\n0 représente un sentiment neutre ou incertain,\n1 représente une avidité extrême (euphorie, FOMO, croissance explosive, confiance excessive).\nDonne uniquement la note chiffrée sur cette échelle, suivie d'une justification expliquant ton choix.\nVoici le texte à analyser :\n\n"
+    process_dataset_with_prompt("test_dataset", prompt)

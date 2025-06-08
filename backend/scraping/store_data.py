@@ -8,8 +8,8 @@ script_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.join(script_dir, '..')
 sys.path.append(os.path.abspath(parent_dir))
 
-from . import crypto_news_scraper
-from . import u_today_scraper
+import crypto_news_scraper
+import u_today_scraper
 
 from processor import h5_utilities, emoji_handler
 from processor.sentiment import compute_sentiment
@@ -110,6 +110,6 @@ def storeData(website="cryptoNews", nbArticle = -1, h5FileName="dataset"):
 
 
 if __name__ == "__main__":
-    nbArticle = 10
+    nbArticle = 25
     storeData("cryptoNews",nbArticle,"dataset")
     storeData("uToday",nbArticle,"dataset")
