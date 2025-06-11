@@ -8,11 +8,10 @@ script_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.join(script_dir, '..')
 sys.path.append(os.path.abspath(parent_dir))
 
-import crypto_news_scraper
-import u_today_scraper
-
 from processor import h5_utilities, emoji_handler
 from processor.sentiment import compute_sentiment
+from . import crypto_news_scraper
+from . import u_today_scraper
 
 CRYPTO_DEFINITIONS = [
     {"name": "Bitcoin", "aliases": ["bitcoin", "btc"]},

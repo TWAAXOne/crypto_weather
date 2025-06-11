@@ -1,5 +1,11 @@
 # crypto_news_scraper.py
 import time
+import sys
+import os
+# Ajouter le chemin parent pour importer le module processor
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from processor.date_parser import parse_date_with_context
+
 from selenium import webdriver
 from selenium.common.exceptions import (
     StaleElementReferenceException,
@@ -147,7 +153,14 @@ class CryptoNewsMarketsScraper:
                         date = self._retry_find_text('.post-detail__date') or 'Date non trouvée'
                         paras = self._retry_find_all_texts('div.post-detail__container p')
                         content = '\n'.join(paras)
-                        yield {'url': url, 'date': date, 'content': content}
+                        
+                        # Parser la date avec le contexte crypto.news
+                        if date != 'Date non trouvée':
+                            parsed_date = parse_date_with_context(date, url)
+                        else:
+                            parsed_date = date
+                        
+                        yield {'url': url, 'date': parsed_date, 'content': content}
                         self.scraped += 1
                         success = True
                         break

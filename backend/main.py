@@ -37,8 +37,8 @@ PROJECT_ROOT = os.path.abspath(os.path.join(BASE_DIR, ".."))
 scraping_thread: Optional[threading.Thread] = None
 scraping_active = False
 last_scraping_time: Optional[datetime] = None
-data_cache = {}
-cache_lock = threading.Lock()
+data_cache = {} # Dictionnaire python qui stocke toutes les données calculées
+cache_lock = threading.Lock() # Lock pour synchroniser l'accès au cache
 cache_update_time: Optional[datetime] = None
 
 
@@ -83,9 +83,11 @@ def read_h5_and_compute() -> dict:
         "sentiment": sentiments.astype(float),
         "content":   content,
         "link":      links
-    }).dropna(subset=["date"])
+    }).dropna(subset=["date"]) # Supprime les valeurs NaN dans les dates, si il y en a
 
-    now = datetime.utcnow()
+    now = datetime.utcnow() # Date et heure actuelle
+
+    # Définition des fenêtres de temps pour les statistiques
     windows = {
         "1h":  now - timedelta(hours=1),
         "24h": now - timedelta(days=1),
@@ -95,43 +97,65 @@ def read_h5_and_compute() -> dict:
 
     result = {}
 
+    
+    ### General Sentiment 
     # Global counts, averages & statuses
     for label, cutoff in windows.items():
         sub   = df[df["date"] >= cutoff]
         count = len(sub)
         avg   = float(sub["sentiment"].mean()) if count else 0.0
-        result[f"count_{label}"]  = count
-        result[f"avg_{label}"]    = round(avg, 4)
-        result[f"status_{label}"] = get_sentiment_status(avg)
+        result[f"count_{label}"]  = count # Nombre d'articles dans la fenêtre de temps
+        result[f"avg_{label}"]    = round(avg, 4) # Moyenne des sentiments dans la fenêtre de temps
+        result[f"status_{label}"] = get_sentiment_status(avg) # Statut du sentiment dans la fenêtre de temps
 
-    # Daily timeseries
+    ### Time series des sentiments moyens par jour
+    # 1. Utilise la date comme index pour le regroupement temporel
+    # 2. Sélectionne uniquement la colonne des sentiments
+    # 3. Regroupe les données par jour et calcule la moyenne
+    # 4. Remplace les jours sans données par 0
+    # 5. Réinitialise l'index pour avoir la date comme colonne normale
     df_daily = (
         df.set_index("date")["sentiment"]
           .resample("D").mean().fillna(0.0)
           .reset_index()
     )
+    
+    # Formatage des données pour l'API :
+    # - Conversion des dates en format YYYY-MM-DD
+    # - Conversion des sentiments en nombres flottants
+    # - Création de deux listes parallèles : dates et sentiments
     result["timeseries"] = {
         "dates":      df_daily["date"].dt.strftime("%Y-%m-%d").tolist(),
         "sentiments": [float(x) for x in df_daily["sentiment"].tolist()]
     }
 
-    # Per-crypto metrics
-    per_crypto = {}
+    ### Per-crypto metrics
+    per_crypto = {} # Dictionnaire pour stocker les statistiques par cryptomonnaie
+    
     for cd in CRYPTO_DEFINITIONS:
         name = cd["name"]
+        # Mask boolean qui dit si la crypto est mentionner dans le dataframe
         mask = df["crypto"].apply(lambda lst: name in lst)
+        
+        # Dictionnaire pour stocker les statistiques de cette cryptomonnaie
         stats = {}
+        
+        # Calcul des statistiques pour chaque fenêtre de temps (1h, 24h, 7d, 30d)
         for label, cutoff in windows.items():
+            # Filtre les articles : doit mentionner la crypto ET être dans la fenêtre de temps
             sub   = df[mask & (df["date"] >= cutoff)]
             count = len(sub)
             avg   = float(sub["sentiment"].mean()) if count else 0.0
-            stats[f"count_{label}"]  = count
-            stats[f"avg_{label}"]    = round(avg, 4)
-            stats[f"status_{label}"] = get_sentiment_status(avg)
+
+            stats[f"count_{label}"]  = count  # Nombre d'articles
+            stats[f"avg_{label}"]    = round(avg, 4)  # Moyenne des sentiments
+            stats[f"status_{label}"] = get_sentiment_status(avg)  # Statut (peur, neutralité, etc.)
+        
         per_crypto[name] = stats
+    
     result["per_crypto"] = per_crypto
 
-    # 100 most recent articles
+    ### 100 most recent articles
     df_sorted = df.sort_values("date", ascending=False).head(100)
     result["recent_articles"] = [
         {
@@ -139,7 +163,7 @@ def read_h5_and_compute() -> dict:
             "crypto":    c,
             "sentiment": float(s),
             "link":      l,
-            "content":   ct[:200] + ("…" if len(ct) > 200 else "")
+            "content":   ct[:200] + ("…" if len(ct) > 200 else "") # On coupe le contenu à 200 caractères
         }
         for d, c, s, l, ct in zip(
             df_sorted["date"],
@@ -166,16 +190,16 @@ def update_cache():
     """Met à jour le cache avec les dernières données"""
     global data_cache, cache_update_time
     try:
-        new_data = read_h5_and_compute()
+        new_data = read_h5_and_compute() # On récupère les données du fichier H5 et on les calcule
         with cache_lock:
-            data_cache = new_data
-            cache_update_time = datetime.utcnow()
+            data_cache = new_data # On met à jour le cache avec les nouvelles données
+            cache_update_time = datetime.utcnow() # On met à jour l'heure de la mise à jour du cache
         logger.info(f"Cache updated at {cache_update_time}")
     except Exception as e:
         logger.error(f"Error updating cache: {e}")
 
 def continuous_scraping():
-    """Fonction de scraping continu qui tourne en arrière-plan"""
+    """Fonction de scraping continu qui tourne en arrière-plan pour le realtime"""
     global scraping_active, last_scraping_time
     
     logger.info("Starting continuous scraping thread...")
@@ -184,9 +208,7 @@ def continuous_scraping():
         try:
             logger.info("Starting new scraping cycle...")
             last_scraping_time = datetime.utcnow()
-            
-            
-            # Scraper les deux sites avec limite élevée
+
             logger.info("Scraping cryptoNews...")
             result1 = storeData("cryptoNews", nbArticle=10000, h5FileName="dataset")
             
@@ -213,6 +235,10 @@ def cache_updater():
     while True:
         time.sleep(10)
         update_cache()
+
+
+
+
 
 # ==== FastAPI Application ====
 app = FastAPI()
