@@ -1,4 +1,6 @@
-# Cahier des Charges – CryptoWeather Sentiment Index
+# Cahier des Charges – CryptoWeather Sentiment Index - Projet WebMining
+
+-> pas la version finale, on va faire un PDF
 
 TODO:
 
