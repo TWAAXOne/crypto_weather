@@ -1,28 +1,13 @@
-"""
-Module pour parser correctement les dates depuis différentes sources.
-Gère les formats ambigus et assure une cohérence dans le parsing.
-"""
-
 import re
 from datetime import datetime, timedelta
 from dateutil import parser as dateutil_parser
 import pytz
 
 def parse_date_with_context(date_str, source_url=None):
-    """
-    Parse une date en tenant compte du contexte (source du site).
-    
-    Args:
-        date_str: La chaîne de date à parser
-        source_url: L'URL source pour déterminer le format attendu
-    
-    Returns:
-        str: Date formatée de manière non ambiguë (ISO format avec timezone)
-    """
     if isinstance(date_str, bytes):
         date_str = date_str.decode('utf-8')
     
-    # Identifier la source
+    # trouver la source
     is_utoday = source_url and 'u.today' in source_url.lower()
     
     # Pattern pour U.Today: "Mon, 9/06/2025 - 6:16"
@@ -31,18 +16,10 @@ def parse_date_with_context(date_str, source_url=None):
     
     if match and is_utoday:
         day_name, first_num, second_num, year, hour, minute = match.groups()
-        
-        # Pour U.Today, le format semble être DD/MM/YYYY
         day = int(first_num)
         month = int(second_num)
-        
-        # Créer un objet datetime
         dt = datetime(int(year), month, day, int(hour), int(minute))
-        
-        # Ajouter timezone UTC par défaut
         dt = pytz.UTC.localize(dt)
-        
-        # Retourner au format ISO pour éviter toute ambiguïté
         return dt.isoformat()
     
     # Pattern pour crypto.news: "Jun 10, 2025 at 02:59 PM GMT+2"
@@ -66,10 +43,8 @@ def parse_date_with_context(date_str, source_url=None):
         elif ampm == 'AM' and hour == 12:
             hour = 0
         
-        # Créer datetime
         dt = datetime(int(year), month, int(day), hour, int(minute))
         
-        # Gérer le timezone
         if timezone:
             offset_match = re.search(r'GMT([+-])(\d+)', timezone)
             if offset_match:
@@ -97,17 +72,14 @@ def parse_date_with_context(date_str, source_url=None):
                 # Sinon essayer mois/jour/année (américain)
                 dt = dateutil_parser.parse(date_str, dayfirst=False)
         else:
-            # Parser normal pour les autres formats
             dt = dateutil_parser.parse(date_str)
         
-        # S'assurer qu'on a un timezone
         if dt.tzinfo is None:
             dt = pytz.UTC.localize(dt)
         
         return dt.isoformat()
     
     except Exception as e:
-        # En cas d'échec, retourner la date originale
         print(f"Impossible de parser la date: {date_str}, erreur: {e}")
         return date_str
 
@@ -120,21 +92,15 @@ def standardize_date_format(date_str):
         date_str = date_str.decode('utf-8')
     
     try:
-        # Parser la date ISO si elle est déjà dans ce format
         if 'T' in date_str and ('+' in date_str or 'Z' in date_str):
             dt = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
         else:
-            # Sinon utiliser dateutil
             dt = dateutil_parser.parse(date_str)
         
-        # S'assurer qu'on a un timezone
         if dt.tzinfo is None:
             dt = pytz.UTC.localize(dt)
         
-        # Convertir en UTC
         dt_utc = dt.astimezone(pytz.UTC)
-        
-        # Retourner au format standard
         return dt_utc.strftime("%Y-%m-%d %H:%M:%S%z")
     
     except Exception:

@@ -37,13 +37,12 @@ Under the hood:
 SUMMARY_URL  = "http://0.0.0.0:8080/sentiment_summary"
 ANALYSIS_URL = "http://0.0.0.0:8080/engage_analysis"
 
-# Initialize session state
+
 if "running" not in st.session_state:
     st.session_state["running"] = False
 if "last_update" not in st.session_state:
     st.session_state["last_update"] = None
 
-# Button to start/stop analysis with status on the same line
 col1, col2 = st.columns([1, 4])
 with col1:
     if st.button("🚀 Launch Analysis" if not st.session_state["running"] else "⏹️ Stop Analysis"):
@@ -52,7 +51,6 @@ with col1:
             st.session_state["last_update"] = time.time()
 
 with col2:
-    # Display analysis status in the same row
     if st.session_state["running"]:
         st.success("✅ Analysis is running - Data updates every 10 seconds")
     else:
@@ -80,7 +78,6 @@ data = fetch_data()
 if data.get("cache_update_time"):
     st.caption(f"📅 Last data update: {data['cache_update_time']}")
 
-# === General Sentiment Section ===
 st.header("General Sentiment")
 st.markdown("---")
 
@@ -127,7 +124,6 @@ def make_gauge(score: float, status: str, title: str):
     )
     return fig
 
-# Display 3 global gauges with captions
 col1, col2, col3 = st.columns(3)
 for col, window in zip([col1, col2, col3], ["24h", "7d", "30d"]):
     avg    = data.get(f"avg_{window}", 0.0)
@@ -160,14 +156,14 @@ if data.get("timeseries", {}).get("dates"):
     )
     st.plotly_chart(fig_ts, use_container_width=True, key=f"timeseries-{st.session_state.get('last_update', 0)}")
 
-# === Sentiment by Cryptocurrency Section ===
+# Sentiment by Cryptocurrency Section
 st.markdown("## Sentiment by Cryptocurrency")
 st.markdown("---")
 
 if "per_crypto" in data:
     windows = ["1h", "24h", "7d", "30d"]
     for name, stats in data["per_crypto"].items():
-        # Don't display if all counts are zero
+        # On affiche pas si tous les counts sont à zéro
         non_zero = any(stats.get(f"count_{w}", 0) > 0 for w in windows)
         if not non_zero:
             continue
@@ -185,18 +181,18 @@ if "per_crypto" in data:
             caption = "No data" if count == 0 else f"{count} articles"
             col.caption(caption)
 
-# === Recent Articles DataFrame ===
+# Recent Articles DataFrame
 if data.get("recent_articles"):
     st.markdown("## 100 Most Recent Articles")
     df100 = pd.DataFrame(data["recent_articles"])
     st.dataframe(df100, use_container_width=True, key=f"articles-{st.session_state.get('last_update', 0)}")
 
-# === Dataset info ===
+# Dataset info/taille
 st.markdown("---")
 dataset_count = data.get('dataset_length', 0)
 st.markdown(f"**Number of items in our dataset:** {dataset_count}")
 
-# === Scraping Status ===
+# Scraping Status
 if data.get("scraping_active") and data.get("scraping_thread_alive"):
     st.success("🔄 Scraping is currently active")
     if data.get("last_scraping_time"):
