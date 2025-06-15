@@ -29,7 +29,7 @@ class BertRegressor(nn.Module):
 # ==== Initialisation globale ====
 # On construit un chemin absolu vers le dossier du modèle
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-MODEL_DIR = os.path.join(BASE_DIR, "model", "output", "bert_sentiment_regression_base_best")
+MODEL_DIR = os.path.join(BASE_DIR, "model", "output", "bert_sentiment_regression_v3")
 
 # Tokenizer local
 TOKENIZER = AutoTokenizer.from_pretrained(MODEL_DIR, local_files_only=True)

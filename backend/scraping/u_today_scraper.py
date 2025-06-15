@@ -1,5 +1,10 @@
 # u_today_scraper.py
 import time
+import sys
+import os
+# Ajouter le chemin parent pour importer le module processor
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from processor.date_parser import parse_date_with_context
 
 from selenium import webdriver
 from selenium.common.exceptions import (
@@ -146,7 +151,13 @@ class UTodayScraper:
                         return "\n".join(p.text for p in paras)
                     content = self._retry_on_stale(grab_content)
 
-                    yield {'url': url, 'date': date, 'content': content}
+                    # Parser la date avec le contexte U.Today
+                    if date:
+                        parsed_date = parse_date_with_context(date, url)
+                    else:
+                        parsed_date = date
+                    
+                    yield {'url': url, 'date': parsed_date, 'content': content}
                     self.scraped_count += 1
                 except Exception:
                     pass
