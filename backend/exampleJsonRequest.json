@@ -1,14 +1,44 @@
 {
   "articles": [
-
-     {
+    {
       "title": "Mark Zuckerbeg is saying bitcoin is shit",
       "content": "Bitcoin will fail says mark zuckerbeg, the coin has no meaning and is useless"
     },
     {
       "title": "Mark Zuckerbeg is saying bitcoin is shit",
       "content": "Bitcoin will fail says mark zuckerbeg, the coin has no meaning and is useless"
+    },
+    {
+      "title": "Ethereum surges as staking demand increases",
+      "content": "Ethereum's price climbed by 10% this week, driven by a surge in demand for liquid staking protocols and institutional interest."
+    },
+    {
+      "title": "Crypto markets show signs of recovery",
+      "content": "After weeks of decline, Bitcoin and other major cryptocurrencies are bouncing back amid renewed investor optimism."
+    },
+    {
+      "title": "SEC intensifies crackdown on crypto exchanges",
+      "content": "The U.S. SEC is tightening its grip on major crypto platforms, raising concerns over future regulatory hurdles in the industry."
+    },
+    {
+      "title": "Dogecoin tumbles after Elon Musk tweets disapproval",
+      "content": "Elon Musk posted that Dogecoin has 'no practical use', causing its value to drop by 15% in a single day."
+    },
+    {
+      "title": "Bitcoin hits new 6-month high",
+      "content": "Bitcoin has reached its highest price in six months, signaling potential market momentum for long-term investors."
+    },
+    {
+      "title": "Solana developers face new scalability challenge",
+      "content": "Despite its rapid growth, Solana's network performance struggles to handle high user demand, prompting community debates."
+    },
+    {
+      "title": "Investors fear crypto winter is not over",
+      "content": "Many analysts warn that recent gains may be short-lived as macroeconomic uncertainty continues to impact digital assets."
+    },
+    {
+      "title": "MicroStrategy buys more Bitcoin amid market dip",
+      "content": "Michael Saylor’s firm increased its Bitcoin holdings during the dip, showing long-term confidence in BTC."
     }
-
   ]
 }
