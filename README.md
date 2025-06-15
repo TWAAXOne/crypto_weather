@@ -5,6 +5,8 @@ Ce projet est un projet webmining fusionnant du scraping de données sur deux si
 ## La documentation du projet
 
 La documentation du projet est dans le fichier `rapport_cryptoweather.pdf`.
+le dataset utilisé se trouve dans /training/dataset
+Le jupyter pour l'entraînement se trouve dans /training/
 
 ## Comment lancer le projet
 
