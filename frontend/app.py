@@ -183,7 +183,7 @@ if "per_crypto" in data:
 
 # Recent Articles DataFrame
 if data.get("recent_articles"):
-    st.markdown("## 100 Most Recent Articles")
+    st.markdown("## 100 Articles")
     df100 = pd.DataFrame(data["recent_articles"])
     st.dataframe(df100, use_container_width=True, key=f"articles-{st.session_state.get('last_update', 0)}")
 
